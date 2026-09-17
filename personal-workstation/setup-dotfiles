@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""Copy missing configuration files from the image into the persistent home."""
+
+import argparse
+import os
+from pathlib import Path
+import shutil
+
+
+def copy_missing(source, target):
+    # Never follow existing symlinks, including links to an old dotfiles checkout.
+    if target.is_symlink():
+        print(f"Keeping existing symlink: {target}")
+        return
+    if source.is_symlink():
+        raise ValueError(f"Dotfile source must not be a symlink: {source}")
+    if source.is_dir():
+        if target.exists() and not target.is_dir():
+            print(f"Keeping existing file: {target}")
+            return
+        target.mkdir(parents=True, exist_ok=True)
+        for child in sorted(source.iterdir()):
+            copy_missing(child, target / child.name)
+    elif not target.exists():
+        # Exclusive creation preserves existing files even during concurrent setup.
+        try:
+            with target.open("xb") as output, source.open("rb") as input_file:
+                shutil.copyfileobj(input_file, output)
+        except FileExistsError:
+            pass
+
+
+def main():
+    argparse.ArgumentParser(description=__doc__).parse_args()
+    source = Path(os.environ.get(
+        "WORKSTATION_DOTFILES_DIR", "/usr/local/share/workstation/dotfiles"
+    ))
+    home = Path(os.environ["HOME"])
+    packages = [source / name for name in ("fish", "nvim")]
+    for package in packages:
+        if not package.is_dir():
+            raise SystemExit(f"Dotfiles directory not found: {package}")
+    for package in packages:
+        copy_missing(package, home)
+
+
+if __name__ == "__main__":
+    main()

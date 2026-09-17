@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+exec podman run --rm -it \
+    --name personal-workstation \
+    --userns keep-id:uid=1000,gid=1000 \
+    --env TERM=xterm-256color \
+    --volume personal-workstation-home:/home/dev \
+    --volume personal-workstation-projects:/workspace \
+    localhost/personal-workstation "$@"

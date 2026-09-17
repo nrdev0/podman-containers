@@ -1,11 +1,18 @@
 FROM docker.io/library/debian:trixie-slim
 
+ARG OPENCODE_VERSION=1.18.31
+ARG NVIM_VERSION=0.12.5
+ARG TREE_SITTER_VERSION=0.27.0
+ARG HERDR_VERSION=0.9.1
+ARG HERDR_SHA256_AMD64=2a02fed16beb651ef006e1d43f048f652ca4dc58ad053cd2d44450563d5c54b7
+ARG HERDR_SHA256_ARM64=f4ccf4de745f2cb9a39a983e9ba3703dad50ec2a58dea83026ceab721bbd8d9e
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        ca-certificates curl git openssh-client \
-       ripgrep tmux fish ncurses-term nodejs npm \
+       ripgrep fish ncurses-term nodejs npm \
        build-essential python3 python3-venv python3-pip unzip xz-utils \
-    && npm install --global opencode-ai \
+    && npm install --global "opencode-ai@${OPENCODE_VERSION}" \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
 
@@ -17,7 +24,7 @@ RUN set -eu; \
         *) printf '%s\n' 'Unsupported architecture for upstream Neovim' >&2; exit 1 ;; \
     esac; \
     curl --fail --show-error --location --retry 3 \
-        "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${nvim_arch}.tar.gz" \
+        "https://github.com/neovim/neovim/releases/download/v${NVIM_VERSION}/nvim-linux-${nvim_arch}.tar.gz" \
         --output /tmp/nvim.tar.gz; \
     tar -xzf /tmp/nvim.tar.gz -C /usr/local --strip-components=1; \
     rm /tmp/nvim.tar.gz; \
@@ -32,19 +39,41 @@ RUN set -eu; \
         *) printf '%s\n' 'Unsupported architecture for Tree-sitter CLI' >&2; exit 1 ;; \
     esac; \
     curl --fail --show-error --location --retry 3 \
-        "https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-linux-${tree_sitter_arch}.gz" \
+        "https://github.com/tree-sitter/tree-sitter/releases/download/v${TREE_SITTER_VERSION}/tree-sitter-linux-${tree_sitter_arch}.gz" \
         --output /tmp/tree-sitter.gz; \
     gzip -d /tmp/tree-sitter.gz; \
     install -m 0755 /tmp/tree-sitter /usr/local/bin/tree-sitter; \
     rm /tmp/tree-sitter; \
     tree-sitter --version
 
+# Install herdr system-wide so it is available outside the persistent home volume.
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) herdr_arch=x86_64; herdr_sha256="$HERDR_SHA256_AMD64" ;; \
+        arm64) herdr_arch=aarch64; herdr_sha256="$HERDR_SHA256_ARM64" ;; \
+        *) printf '%s\n' 'Unsupported architecture for herdr' >&2; exit 1 ;; \
+    esac; \
+    curl --fail --show-error --location --retry 3 \
+        "https://github.com/herdrdev/herdr/releases/download/v${HERDR_VERSION}/herdr-linux-${herdr_arch}" \
+        --output /tmp/herdr; \
+    printf '%s  %s\n' "$herdr_sha256" /tmp/herdr | sha256sum --check -; \
+    install -m 0755 /tmp/herdr /usr/local/bin/herdr; \
+    rm /tmp/herdr; \
+    herdr --version
+
 RUN groupadd --gid 1000 dev \
     && useradd --uid 1000 --gid 1000 --no-create-home \
        --home-dir /home/dev --shell /usr/bin/fish dev \
     && install -d -o dev -g dev /home/dev /workspace
 
+# Seed the persistent home from the repository snapshot included in this image.
+COPY dotfiles/ /usr/local/share/workstation/dotfiles/
+COPY setup-dotfiles /usr/local/bin/setup-dotfiles
+COPY entrypoint /usr/local/bin/workstation-entrypoint
+RUN chmod 0755 /usr/local/bin/setup-dotfiles /usr/local/bin/workstation-entrypoint
+
 ENV HOME=/home/dev LANG=C.UTF-8 SHELL=/usr/bin/fish
 USER dev
 WORKDIR /workspace
+ENTRYPOINT ["workstation-entrypoint"]
 CMD ["fish"]
