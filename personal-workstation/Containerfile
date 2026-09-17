@@ -1,0 +1,50 @@
+FROM docker.io/library/debian:trixie-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates curl git openssh-client \
+       ripgrep tmux fish ncurses-term nodejs npm \
+       build-essential python3 python3-venv python3-pip unzip xz-utils \
+    && npm install --global opencode-ai \
+    && npm cache clean --force \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upstream bundles include Neovim's runtime and bundled dependencies.
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) nvim_arch=x86_64 ;; \
+        arm64) nvim_arch=arm64 ;; \
+        *) printf '%s\n' 'Unsupported architecture for upstream Neovim' >&2; exit 1 ;; \
+    esac; \
+    curl --fail --show-error --location --retry 3 \
+        "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${nvim_arch}.tar.gz" \
+        --output /tmp/nvim.tar.gz; \
+    tar -xzf /tmp/nvim.tar.gz -C /usr/local --strip-components=1; \
+    rm /tmp/nvim.tar.gz; \
+    nvim --version; \
+    nvim --headless -u NONE -i NONE '+quitall'
+
+# NvChad uses the Tree-sitter CLI to generate and install syntax parsers.
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) tree_sitter_arch=x64 ;; \
+        arm64) tree_sitter_arch=arm64 ;; \
+        *) printf '%s\n' 'Unsupported architecture for Tree-sitter CLI' >&2; exit 1 ;; \
+    esac; \
+    curl --fail --show-error --location --retry 3 \
+        "https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-linux-${tree_sitter_arch}.gz" \
+        --output /tmp/tree-sitter.gz; \
+    gzip -d /tmp/tree-sitter.gz; \
+    install -m 0755 /tmp/tree-sitter /usr/local/bin/tree-sitter; \
+    rm /tmp/tree-sitter; \
+    tree-sitter --version
+
+RUN groupadd --gid 1000 dev \
+    && useradd --uid 1000 --gid 1000 --no-create-home \
+       --home-dir /home/dev --shell /usr/bin/fish dev \
+    && install -d -o dev -g dev /home/dev /workspace
+
+ENV HOME=/home/dev LANG=C.UTF-8 SHELL=/usr/bin/fish
+USER dev
+WORKDIR /workspace
+CMD ["fish"]
