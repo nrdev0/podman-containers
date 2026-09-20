@@ -36,7 +36,7 @@ def main():
         "WORKSTATION_DOTFILES_DIR", "/usr/local/share/workstation/dotfiles"
     ))
     home = Path(os.environ["HOME"])
-    packages = [source / name for name in ("fish", "nvim")]
+    packages = [source / name for name in ("fish", "nvim", "herdr")]
     for package in packages:
         if not package.is_dir():
             raise SystemExit(f"Dotfiles directory not found: {package}")
